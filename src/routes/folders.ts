@@ -15,22 +15,53 @@ export const foldersRoutes = new Elysia({ prefix: "/folders" })
         return [];
       }
 
-      // Buscar folders do usuário ou compartilhados com ele
-      const folders = await withTimeout(
-        sql`
-          SELECT DISTINCT w.*
-          FROM folders w
-          LEFT JOIN workspace_shares ws ON w.id = ws.workspace_id
-          WHERE w.user_id = ${userId}
-             OR ws.shared_with_user_id = ${userId}
-          ORDER BY w.created_at DESC
-        `,
-        30000 // 30 seconds timeout
-      );
+      // Buscar workspaces do usuário usando função SECURITY DEFINER para bypassar RLS
+      console.log(`🔍 [GET /folders] Querying workspaces for user: ${userId}`);
+
+      let folders;
+      try {
+        folders = await withTimeout(
+          sql.unsafe(`SELECT * FROM get_user_workspaces($1::TEXT)`, [userId]),
+          30000 // 30 seconds timeout
+        );
+      } catch (funcError: any) {
+        console.error(
+          `❌ [GET /folders] Error calling get_user_workspaces:`,
+          funcError.message
+        );
+        // Fallback: query direta (pode ser bloqueada por RLS, mas vamos tentar)
+        console.log(`⚠️ [GET /folders] Falling back to direct query...`);
+        folders = await withTimeout(
+          sql.unsafe(
+            `
+            SELECT DISTINCT w.*
+            FROM workspaces w
+            LEFT JOIN workspace_shares ws ON w.id = ws.workspace_id
+            WHERE w.user_id = $1::TEXT
+               OR ws.shared_with_user_id::TEXT = $1::TEXT
+            ORDER BY w.created_at DESC
+          `,
+            [userId]
+          ),
+          30000
+        );
+      }
 
       console.log(
-        `✅ [GET /folders] Fetched ${folders.length} workspace(s) for user ${userId}`
+        `✅ [GET /folders] Fetched ${folders.length} workspace(s) for user ${userId}`,
+        folders.length > 0
+          ? `First workspace: ${folders[0]?.id} - ${folders[0]?.title}`
+          : "No workspaces found"
       );
+
+      // Log all workspace IDs for debugging
+      if (folders.length > 0) {
+        console.log(
+          `📋 [GET /folders] Workspace IDs:`,
+          folders.map((f: any) => f.id).join(", ")
+        );
+      }
+
       return [...folders];
     } catch (error: any) {
       console.error("❌ [GET /folders] Error fetching folders:", error.message);
@@ -58,11 +89,15 @@ export const foldersRoutes = new Elysia({ prefix: "/folders" })
   .post("/", async ({ body }) => {
     const { title, description, user_id } = body as any;
     try {
+      // Generate a simple text ID for workspace
+      const workspaceId = `workspace-${Date.now()}-${Math.random()
+        .toString(36)
+        .substr(2, 9)}`;
       const result = await sql`
-        INSERT INTO folders (id, user_id, title, description, is_public)
-        VALUES (gen_random_uuid(), ${
-          user_id || "00000000-0000-0000-0000-000000000000"
-        }, ${title}, ${description}, false)
+        INSERT INTO workspaces (id, user_id, title, description, is_public)
+        VALUES (${workspaceId}, ${
+        user_id || "user-000"
+      }, ${title}, ${description}, false)
         RETURNING *
       `;
       if (!result || !result[0]) {
@@ -123,8 +158,8 @@ export const foldersRoutes = new Elysia({ prefix: "/folders" })
         .join(", ");
 
       const result = await sql.unsafe(
-        `UPDATE folders 
-         SET ${setClause}, updated_at = NOW()
+        `UPDATE workspaces 
+         SET ${setClause}
          WHERE id = $${updateFields.length + 1}
          RETURNING *`,
         [...updateValues, id]

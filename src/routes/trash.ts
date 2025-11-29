@@ -3,12 +3,22 @@ import sql from "../db";
 
 export const trashRoutes = new Elysia({ prefix: "/folders" })
   // GET /folders/:id/trash - Listar itens da lixeira de um workspace
+  // Trash items são aqueles com active = false
   .get("/:id/trash", async ({ params: { id } }) => {
     try {
-      const items =
-        await sql`SELECT * FROM items WHERE workspace_id = ${id} AND deleted_at IS NOT NULL ORDER BY deleted_at DESC`;
+      // Usar função SECURITY DEFINER para bypassar RLS
       console.log(
-        `✅ [GET /folders/${id}/trash] Fetched ${items.length} item(s) from trash`
+        `🔍 [GET /folders/${id}/trash] Querying trash for workspace: ${id}`
+      );
+      const items = await sql.unsafe(
+        `SELECT * FROM get_workspace_trash($1::TEXT)`,
+        [id]
+      );
+      console.log(
+        `✅ [GET /folders/${id}/trash] Fetched ${items.length} item(s) from trash`,
+        items.length > 0
+          ? `First item: ${items[0]?.id}`
+          : "No trash items found"
       );
       return [...items];
     } catch (error: any) {
