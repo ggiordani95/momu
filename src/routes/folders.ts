@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
 import sql from "../db";
+import { withTimeout } from "../utils/queryTimeout";
 
 export const foldersRoutes = new Elysia({ prefix: "/folders" })
   // GET /folders - Listar folders do usuário
@@ -15,14 +16,17 @@ export const foldersRoutes = new Elysia({ prefix: "/folders" })
       }
 
       // Buscar folders do usuário ou compartilhados com ele
-      const folders = await sql`
-        SELECT DISTINCT w.*
-        FROM folders w
-        LEFT JOIN workspace_shares ws ON w.id = ws.workspace_id
-        WHERE w.user_id = ${userId}
-           OR ws.shared_with_user_id = ${userId}
-        ORDER BY w.created_at DESC
-      `;
+      const folders = await withTimeout(
+        sql`
+          SELECT DISTINCT w.*
+          FROM folders w
+          LEFT JOIN workspace_shares ws ON w.id = ws.workspace_id
+          WHERE w.user_id = ${userId}
+             OR ws.shared_with_user_id = ${userId}
+          ORDER BY w.created_at DESC
+        `,
+        30000 // 30 seconds timeout
+      );
 
       console.log(
         `✅ [GET /folders] Fetched ${folders.length} workspace(s) for user ${userId}`
@@ -31,6 +35,12 @@ export const foldersRoutes = new Elysia({ prefix: "/folders" })
     } catch (error: any) {
       console.error("❌ [GET /folders] Error fetching folders:", error.message);
       console.error("   Stack:", error.stack);
+
+      // If it's a timeout, throw to be handled by global error handler
+      if (error.message?.includes("timeout")) {
+        throw error;
+      }
+
       // Return mock data if DB fails for MVP demonstration purposes
       return [
         {

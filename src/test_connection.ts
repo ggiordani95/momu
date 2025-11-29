@@ -1,3 +1,6 @@
+// Carregar variáveis de ambiente (incluindo .env.local) antes de tudo
+import "./env";
+
 import sql from "./db";
 
 async function testConnection() {

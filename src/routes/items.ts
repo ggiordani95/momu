@@ -102,18 +102,46 @@ export const itemsRoutes = new Elysia({ prefix: "/folders" })
     }
 
     try {
+      // Calculate the next order_index for this parent_id
+      // Get the maximum order_index for items with the same parent_id in this workspace
+      let maxOrderResult;
+      if (parent_id) {
+        // If parent_id is provided, find max order_index for items with this parent_id
+        maxOrderResult = await sql`
+          SELECT COALESCE(MAX(order_index), -1) as max_order
+          FROM items
+          WHERE workspace_id = ${id}
+            AND parent_id = ${parent_id}
+            AND deleted_at IS NULL
+            AND (active IS NULL OR active = true)
+        `;
+      } else {
+        // If parent_id is null, find max order_index for root items (parent_id IS NULL)
+        maxOrderResult = await sql`
+          SELECT COALESCE(MAX(order_index), -1) as max_order
+          FROM items
+          WHERE workspace_id = ${id}
+            AND parent_id IS NULL
+            AND deleted_at IS NULL
+            AND (active IS NULL OR active = true)
+        `;
+      }
+
+      const maxOrder = maxOrderResult[0]?.max_order ?? -1;
+      const nextOrderIndex = maxOrder + 1;
+
       const result = await sql`
         INSERT INTO items (id, workspace_id, parent_id, type, title, content, youtube_url, youtube_id, order_index, active)
         VALUES (gen_random_uuid(), ${id}, ${parent_id || null}, ${type}, ${
         title || "Novo item"
       }, ${content || null}, ${youtube_url || null}, ${
         youtube_id || null
-      }, 0, ${(body as any)?.active ?? true})
+      }, ${nextOrderIndex}, ${(body as any)?.active ?? true})
         RETURNING *
       `;
       if (result[0]) {
         console.log(
-          `✅ [POST /folders/${id}/items] Created item: ${result[0].id} (${result[0].type}: ${result[0].title})`
+          `✅ [POST /folders/${id}/items] Created item: ${result[0].id} (${result[0].type}: ${result[0].title}) with order_index: ${nextOrderIndex}`
         );
         return result[0];
       }

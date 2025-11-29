@@ -1,4 +1,6 @@
 import postgres from "postgres";
+// Carregar variáveis de ambiente (incluindo .env.local)
+import "./env";
 
 // Usar SUPABASE_POOL_URL para connection pooling (porta 6543)
 // Isso reduz significativamente os CONNECT_TIMEOUT aleatórios
