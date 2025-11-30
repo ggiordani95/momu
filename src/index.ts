@@ -3,9 +3,9 @@ import "./env";
 
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
-import { itemsRoutes, itemRoutes } from "./routes/items";
+import { filesRoutes, fileRoutes } from "./routes/files";
 import { trashRoutes } from "./routes/trash";
-import { foldersRoutes } from "./routes/folders";
+import { workspacesRoutes } from "./routes/workspaces";
 
 const app = new Elysia()
   .use(cors())
@@ -63,9 +63,9 @@ const app = new Elysia()
     timestamp: new Date().toISOString(),
     message: "Backend is running",
   }))
-  .use(foldersRoutes)
-  .use(itemsRoutes)
-  .use(itemRoutes)
+  .use(workspacesRoutes)
+  .use(filesRoutes)
+  .use(fileRoutes)
   .use(trashRoutes)
   .listen({
     port: 3001,

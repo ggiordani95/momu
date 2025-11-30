@@ -8,15 +8,33 @@ export async function withTimeout<T>(
   queryPromise: Promise<T>,
   timeoutMs: number = 30000
 ): Promise<T> {
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(
-      () =>
-        reject(
-          new Error(`Database query timeout after ${timeoutMs / 1000} seconds`)
-        ),
-      timeoutMs
-    )
-  );
+  // Garantir que timeoutMs é um número positivo válido
+  if (!timeoutMs || timeoutMs <= 0 || !isFinite(timeoutMs)) {
+    timeoutMs = 30000; // Default para 30 segundos
+  }
 
-  return Promise.race([queryPromise, timeoutPromise]);
+  let timeoutId: NodeJS.Timeout | null = null;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(
+        new Error(`Database query timeout after ${timeoutMs / 1000} seconds`)
+      );
+    }, timeoutMs);
+  });
+
+  try {
+    const result = await Promise.race([queryPromise, timeoutPromise]);
+    // Limpar timeout se a query completou antes
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    return result;
+  } catch (error) {
+    // Limpar timeout em caso de erro
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    throw error;
+  }
 }
