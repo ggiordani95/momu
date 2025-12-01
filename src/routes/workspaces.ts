@@ -256,7 +256,6 @@ export const workspacesRoutes = new Elysia({ prefix: "/workspaces" })
           LEFT JOIN files_video fv ON f.id = fv.file_id AND f.type = 'video'
           LEFT JOIN files_folder ff ON f.id = ff.file_id AND f.type = 'folder'
           WHERE f.workspace_id = ANY($1::TEXT[])
-            AND f.active = true
           ORDER BY f.workspace_id, f.order_index ASC
         `,
           [workspaceIds]

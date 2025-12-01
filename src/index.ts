@@ -6,6 +6,7 @@ import { cors } from "@elysiajs/cors";
 import { filesRoutes, fileRoutes } from "./routes/files";
 import { trashRoutes } from "./routes/trash";
 import { workspacesRoutes } from "./routes/workspaces";
+import { aiRoutes } from "./routes/ai";
 
 const app = new Elysia()
   .use(cors())
@@ -67,6 +68,7 @@ const app = new Elysia()
   .use(filesRoutes)
   .use(fileRoutes)
   .use(trashRoutes)
+  .use(aiRoutes)
   .listen({
     port: 3001,
     hostname: "0.0.0.0",

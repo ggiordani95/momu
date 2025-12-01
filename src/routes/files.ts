@@ -790,17 +790,49 @@ export const fileRoutes = new Elysia({ prefix: "/files" })
     }
   })
 
+  // POST /files/batch-delete - Soft delete múltiplos arquivos (marcar como active = false)
+  .post("/batch-delete", async ({ body }) => {
+    const { ids } = body as { ids: string[] };
+    try {
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return { error: "IDs array is required" };
+      }
+
+      const result = await sql`
+        UPDATE files
+        SET active = false, updated_at = NOW()
+        WHERE id = ANY(${ids})
+        RETURNING id
+      `;
+
+      console.log(
+        `✅ [POST /files/batch-delete] Soft deleted ${result.length} file(s)`
+      );
+      return {
+        success: true,
+        deleted: result.length,
+        ids: result.map((r: any) => r.id),
+      };
+    } catch (error: any) {
+      console.error(
+        `❌ [POST /files/batch-delete] Error deleting files:`,
+        error.message
+      );
+      return { error: `Failed to delete files: ${error.message}` };
+    }
+  })
+
   // DELETE /files/:id - Soft delete (marcar como active = false)
   .delete("/:id", async ({ params: { id } }) => {
     try {
       await sql`
         UPDATE files
-        SET active = false
+        SET active = false, updated_at = NOW()
         WHERE id = ${id}
       `;
 
       console.log(`✅ [DELETE /files/${id}] Soft deleted file`);
-      return { success: true };
+      return { success: true, id };
     } catch (error: any) {
       console.error(
         `❌ [DELETE /files/${id}] Error deleting file:`,
@@ -827,5 +859,103 @@ export const fileRoutes = new Elysia({ prefix: "/files" })
         error.message
       );
       return { error: `Failed to restore file: ${error.message}` };
+    }
+  })
+
+  // DELETE /files/:id/permanent - Permanently delete a file from database
+  .delete("/:id/permanent", async ({ params: { id } }) => {
+    try {
+      // Get file type first to know which table to delete from
+      const fileResult = await sql`
+        SELECT type FROM files WHERE id = ${id}
+      `;
+
+      if (!fileResult || fileResult.length === 0) {
+        return { error: "File not found" };
+      }
+
+      const fileType = fileResult[0]?.type;
+
+      // Delete from type-specific table first (foreign key constraint)
+      if (fileType === "note") {
+        await sql`DELETE FROM files_note WHERE file_id = ${id}`;
+      } else if (fileType === "video") {
+        await sql`DELETE FROM files_video WHERE file_id = ${id}`;
+      } else if (fileType === "folder") {
+        await sql`DELETE FROM files_folder WHERE file_id = ${id}`;
+      }
+
+      // Then delete from files table
+      await sql`DELETE FROM files WHERE id = ${id}`;
+
+      console.log(
+        `✅ [DELETE /files/${id}/permanent] Permanently deleted file`
+      );
+      return { success: true, id };
+    } catch (error: any) {
+      console.error(
+        `❌ [DELETE /files/${id}/permanent] Error permanently deleting file:`,
+        error.message
+      );
+      return { error: `Failed to permanently delete file: ${error.message}` };
+    }
+  })
+
+  // POST /files/batch-permanent-delete - Permanently delete multiple files
+  .post("/batch-permanent-delete", async ({ body }) => {
+    const { ids } = body as { ids: string[] };
+    try {
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return { error: "IDs array is required" };
+      }
+
+      // Get file types first
+      const filesResult = await sql`
+        SELECT id, type FROM files WHERE id = ANY(${ids})
+      `;
+
+      // Group by type for efficient deletion
+      const notes = filesResult
+        .filter((f: any) => f.type === "note")
+        .map((f: any) => f.id);
+      const videos = filesResult
+        .filter((f: any) => f.type === "video")
+        .map((f: any) => f.id);
+      const folders = filesResult
+        .filter((f: any) => f.type === "folder")
+        .map((f: any) => f.id);
+
+      // Delete from type-specific tables
+      if (notes.length > 0) {
+        await sql`DELETE FROM files_note WHERE file_id = ANY(${notes})`;
+      }
+      if (videos.length > 0) {
+        await sql`DELETE FROM files_video WHERE file_id = ANY(${videos})`;
+      }
+      if (folders.length > 0) {
+        await sql`DELETE FROM files_folder WHERE file_id = ANY(${folders})`;
+      }
+
+      // Delete from files table
+      const result = await sql`
+        DELETE FROM files
+        WHERE id = ANY(${ids})
+        RETURNING id
+      `;
+
+      console.log(
+        `✅ [POST /files/batch-permanent-delete] Permanently deleted ${result.length} file(s)`
+      );
+      return {
+        success: true,
+        deleted: result.length,
+        ids: result.map((r: any) => r.id),
+      };
+    } catch (error: any) {
+      console.error(
+        `❌ [POST /files/batch-permanent-delete] Error permanently deleting files:`,
+        error.message
+      );
+      return { error: `Failed to permanently delete files: ${error.message}` };
     }
   });
